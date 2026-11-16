@@ -1,4 +1,3 @@
-# { "Depends": "py-genlayer:test" }
 """
 DeliveryEscrow — an AI-judged freelance delivery escrow.
 
@@ -346,8 +345,11 @@ class DeliveryEscrow(gl.Contract):
     total_paid_out_atto: u256
     total_refunded_atto: u256
 
-    def __init__(self):
-        self.owner = gl.message.sender_account
+    def __init__(self, owner_address: Address):
+        # The owner is passed in as a constructor argument on purpose:
+        # reading the sender inside __init__ breaks deployment on
+        # GenLayer Studio. When deploying, pass your own wallet address.
+        self.owner = owner_address
         self.arbiter_set = False
         self.counters["escrow_count"] = 0
         self.counters["settled_count"] = 0

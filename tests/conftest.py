@@ -186,7 +186,7 @@ def contract(gl):
     c.escrows = {}
     c.escrow_order = []
     c.counters = {}
-    c.__init__()
+    c.__init__(OWNER)
     return c
 
 

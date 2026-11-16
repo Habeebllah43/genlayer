@@ -40,6 +40,10 @@ python3 -m pytest tests/ -q
 1. Open **https://studio.genlayer.com** and connect your wallet.
 2. Create a new contract and paste in `contracts/delivery_escrow.py`
    (one contract per file — this file is the whole contract).
+   When Studio asks for the constructor argument, enter your own wallet
+   address as `owner_address` (the contract takes the owner as a
+   parameter because reading the sender inside `__init__` breaks
+   deployment on Studio).
 3. Deploy to **studionet**. Studio deploys with 5 simulated validators,
    so `request_judgment` actually runs consensus.
 4. **Confirm the Arbiter.** In Studio, find the network's Arbiter
