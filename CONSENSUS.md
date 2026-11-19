@@ -28,10 +28,13 @@ gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
   (`_build_judgment_prompt`), calls `gl.nondet.exec_prompt(prompt,
   response_format="json")`, parses the reply with `_parse_verdict`, and
   returns the normalized verdict as a sorted JSON string.
-- **Validator** (`_validate_judgment`): re-runs the leader's work
-  itself, parses both verdicts, and compares them with `_verdicts_agree`.
-  It returns a boolean — agree or disagree. It never trusts the leader's
-  text.
+- **Validator** (`_validate_judgment`): receives the leader's outcome
+  as a `gl.vm.Result` — on `gl.vm.Return` it reads the leader's verdict
+  from `.calldata`; on any other Result (the leader failed) it re-runs
+  the leader's work and compares the failure under the error taxonomy.
+  On a verdict it re-runs the leader's work itself, parses both
+  verdicts, and compares them with `_verdicts_agree`. It returns a
+  boolean — agree or disagree. It never trusts the leader's text.
 
 All web fetches and LLM calls happen inside these two functions. Nothing
 outside `run_nondet_unsafe` is nondeterministic, and `settle` makes no
@@ -137,17 +140,23 @@ there is no path from a failed or unverifiable judgment to a payout.
 
 ## Open questions (confirm in Studio testing)
 
-1. **Error propagation shape.** The design assumes the leader's
-   normalized error string is what the validator compares when the
-   leader's nondeterministic call raises. Confirm in GenLayer Studio
-   how a raised leader error reaches the validator, and adjust
-   `_validate_judgment` if the VM hands validators an error object
-   rather than the leader's return value.
-2. **Validator argument.** The design assumes `validator_fn` receives
-   the leader's return value as its single argument. Confirm against
-   the `run_nondet_unsafe` signature in the deployed GenVM version.
-3. **Payout interface.** Payouts use `_PayoutTarget.emit_transfer`
+1. **Payout interface.** Payouts use `_PayoutTarget.emit_transfer`
    (the faucet pattern from Studio's bundled `faucet.py`); confirm
    the payout wiring in Studio testing (see README).
-4. **Block timestamp.** Deadline checks use `gl.block.timestamp`;
-   confirm it is available in the deployed GenVM version.
+
+The following were open questions in an earlier draft and are now
+resolved against the official docs (docs.genlayer.com):
+
+- **Error propagation shape / validator argument (resolved).** The
+  validator receives a `gl.vm.Result`, not the raw verdict — see
+  "Error Patterns for Consensus" in the Non-determinism / Equivalence
+  Principle docs: `validator_fn(leaders_res: gl.vm.Result) -> bool`.
+  On `gl.vm.Return` the leader's value is on `.calldata`; on
+  `gl.vm.UserError` / `gl.vm.VMError` the leader failed and its message
+  is on `.message`. `_validate_judgment` follows that pattern exactly.
+- **Time source (resolved).** There is no block timestamp in GenLayer
+  — the Transaction Context docs state "No block number, no block
+  hash." Deadlines use `int(datetime.now(timezone.utc).timestamp())`
+  (Unix seconds, the docs' own form for "Arithmetic, expiries,
+  deltas"): the stdlib clock is wired to the transaction datetime, so
+  every validator sees the same value.

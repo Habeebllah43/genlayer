@@ -14,6 +14,7 @@ from conftest import (
     PAYOUT,
     delivery_escrow,
     record_transfers,
+    set_now,
     set_sender,
     stub_judge,
 )
@@ -246,7 +247,7 @@ class TestLifecycle:
             contract.submit_delivery(funded, "not-a-url", "")
 
     def test_submit_delivery_after_deadline(self, contract, gl, funded):
-        gl.block.timestamp = NOW + 86_400  # exactly at deadline
+        set_now(NOW + 86_400)  # exactly at deadline
         set_sender(gl, FREELANCER)
         with pytest.raises(UserError):
             contract.submit_delivery(funded, "https://example.com/x", "")
@@ -347,7 +348,7 @@ class TestLifecycle:
 
     def test_refund_after_deadline_no_delivery(self, contract, gl, funded, monkeypatch):
         calls = record_transfers(monkeypatch)
-        gl.block.timestamp = NOW + 86_400 + 1
+        set_now(NOW + 86_400 + 1)
         set_sender(gl, CLIENT)
         res = contract.claim_refund(funded)
         assert res["status"] == "refunded"
@@ -359,7 +360,7 @@ class TestLifecycle:
             contract.claim_refund(funded)
 
     def test_refund_wrong_caller(self, contract, gl, funded):
-        gl.block.timestamp = NOW + 86_400 + 1
+        set_now(NOW + 86_400 + 1)
         set_sender(gl, FREELANCER)
         with pytest.raises(UserError):
             contract.claim_refund(funded)

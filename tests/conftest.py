@@ -4,14 +4,24 @@ imports and runs without GenVM installed.
 The stub mirrors the parts of the real API the contract uses:
 - `gl` namespace: public.write / public.write.payable / public.view,
   evm.contract_interface, nondet.web.render, nondet.exec_prompt,
-  vm.run_nondet_unsafe, eq_principle, message, block, Contract, UserError.
+  vm.run_nondet_unsafe (with gl.vm.Return / gl.vm.UserError Result
+  types), eq_principle, message, Contract, UserError.
 - Top-level types: u256, Address, TreeMap, DynArray, allow_storage.
 
+There is deliberately NO `gl.block`: GenLayer exposes no block number,
+hash or timestamp (docs: Transaction Context). Time comes from the
+stdlib clock, which GenVM wires to the transaction datetime — the stub
+pins the contract module's `datetime.now(timezone.utc)` to the test's
+NOW via _FixedDateTime (see set_now).
+
 `run_nondet_unsafe` here models the real flow in miniature: run the
-leader, hand its result to the validator, and raise if the validator
-disagrees. Tests override `gl.nondet.web.render` / `exec_prompt` with
-canned responses, and patch `_PayoutTarget.emit_transfer` to record
-payouts.
+leader, wrap its outcome in a gl.vm.Result (Return with the value on
+.calldata, or UserError carrying the leader's message), hand that
+Result to the validator, and raise if the validator disagrees. If the
+leader errored and the validator agrees it failed, the leader's error
+is re-raised, as errors flow from nondet to deterministic code. Tests
+override `gl.nondet.web.render` / `exec_prompt` with canned responses,
+and patch `_PayoutTarget.emit_transfer` to record payouts.
 """
 import sys
 import types
@@ -80,10 +90,31 @@ class _Nondet:
 
 
 class _Vm:
+    class Return:
+        """A successful leader outcome; the value is on .calldata."""
+
+        def __init__(self, calldata):
+            self.calldata = calldata
+
+    class UserError(Exception):
+        """A leader application error, delivered to the validator as a
+        gl.vm.Result carrying the leader's message on .message."""
+
+        def __init__(self, message):
+            super().__init__(message)
+            self.message = message
+
     @staticmethod
     def run_nondet_unsafe(leader_fn, validator_fn):
-        result = leader_fn()
-        if not validator_fn(result):
+        try:
+            result = leader_fn()
+        except Exception as e:
+            leaders_res = _Vm.UserError(str(e))
+            if not validator_fn(leaders_res):
+                raise RuntimeError("consensus failed: validator disagreed with leader")
+            raise  # validators agreed the leader failed — propagate its error
+        leaders_res = _Vm.Return(result)
+        if not validator_fn(leaders_res):
             raise RuntimeError("consensus failed: validator disagreed with leader")
         return result
 
@@ -99,12 +130,8 @@ class _EqPrinciple:
 
 
 class _Message:
-    sender_account = "0x0000000000000000000000000000000000000000"
+    sender_address = "0x0000000000000000000000000000000000000000"
     value = 0
-
-
-class _Block:
-    timestamp = 0
 
 
 class _Gl:
@@ -114,7 +141,6 @@ class _Gl:
     vm = _Vm()
     eq_principle = _EqPrinciple()
     message = _Message()
-    block = _Block()
 
     class Contract:
         pass
@@ -164,6 +190,38 @@ FREELANCER = "0x3333333333333333333333333333333333333333"
 PAYOUT = "0x4444444444444444444444444444444444444444"
 NOW = 1_800_000_000  # fixed "now" for deterministic deadline tests
 
+from datetime import datetime as _RealDateTime, timezone as _RealTimezone
+
+
+class _FixedDateTime:
+    """Stand-in for the contract module's `datetime` name.
+
+    Real GenVM wires the stdlib clock to the transaction datetime, so
+    `datetime.now(timezone.utc)` returns the same value on every
+    validator (docs: Transaction Context). The stub pins it to NOW;
+    set_now() moves it, which is how tests simulate time passing.
+    Only `now()` is modeled — the contract uses nothing else from
+    `datetime`.
+    """
+
+    _now = _RealDateTime.fromtimestamp(NOW, tz=_RealTimezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls._now
+
+    @classmethod
+    def set_now(cls, ts):
+        cls._now = _RealDateTime.fromtimestamp(ts, tz=_RealTimezone.utc)
+
+
+delivery_escrow.datetime = _FixedDateTime
+
+
+def set_now(ts):
+    """Move the stub's pinned transaction datetime to Unix seconds `ts`."""
+    _FixedDateTime.set_now(ts)
+
 
 @pytest.fixture
 def gl():
@@ -177,9 +235,9 @@ def contract(gl):
     Storage maps are created by hand here: real GenVM auto-creates them,
     but the stub needs them to exist before __init__ runs.
     """
-    gl.message.sender_account = OWNER
+    gl.message.sender_address = OWNER
     gl.message.value = 0
-    gl.block.timestamp = NOW
+    set_now(NOW)
     c = object.__new__(delivery_escrow.DeliveryEscrow)
     c.escrows = {}
     c.escrow_order = []
@@ -191,7 +249,7 @@ def contract(gl):
 @pytest.fixture
 def funded(contract, gl):
     """An escrow funded by CLIENT for FREELANCER: 5 GEN, deadline +1 day."""
-    gl.message.sender_account = CLIENT
+    gl.message.sender_address = CLIENT
     gl.message.value = 5 * 10**18
     escrow_id = contract.create_escrow(
         FREELANCER,
@@ -213,7 +271,7 @@ def funded(contract, gl):
 @pytest.fixture
 def delivered(contract, gl, funded):
     """`funded` escrow with a delivery submitted by the freelancer."""
-    gl.message.sender_account = FREELANCER
+    gl.message.sender_address = FREELANCER
     contract.submit_delivery(
         funded, "https://example.com/bakery/index.html", "Done — all 4 criteria covered."
     )
@@ -221,7 +279,7 @@ def delivered(contract, gl, funded):
 
 
 def set_sender(gl, account, value=0):
-    gl.message.sender_account = account
+    gl.message.sender_address = account
     gl.message.value = value
 
 

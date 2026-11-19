@@ -24,8 +24,9 @@ genvm-lint check contracts/delivery_escrow.py
 > py-genlayer` find no such packages; the `genlayer` package on PyPI is
 > an empty placeholder). Install it from GenLayer's official tooling
 > instructions and run the check before deploying. Fix anything it
-> flags — in particular confirm `gl.block.timestamp` and the
-> `_PayoutTarget.emit_transfer` payout wiring (see step 2).
+> flags — in particular confirm the transaction-datetime deadline clock
+> (`datetime.now(timezone.utc)`) and the `_PayoutTarget.emit_transfer`
+> payout wiring (see step 2).
 
 Also run the unit tests once more, so you know the logic you are
 deploying is the logic that passed:

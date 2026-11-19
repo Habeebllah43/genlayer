@@ -46,6 +46,7 @@ the address passed to the constructor. No Arbiter or setup call is needed.
 """
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from genlayer import *
 
@@ -370,8 +371,14 @@ class DeliveryEscrow(gl.Contract):
 
     # -- internal -----------------------------------------------------------
     def _now(self) -> u256:
-        # Block timestamp, in seconds. Used for deadline checks only.
-        return gl.block.timestamp
+        # Transaction datetime, in Unix seconds. GenLayer exposes NO block
+        # timestamp (docs: Transaction Context — "No block number, no block
+        # hash"). Instead the stdlib clock is wired to the transaction
+        # datetime, so datetime.now(timezone.utc) returns the same value
+        # on every validator, and int(...timestamp()) is the documented
+        # form for arithmetic / expiries. Deadlines are u256 Unix seconds,
+        # so both sides of every deadline comparison are in seconds.
+        return int(datetime.now(timezone.utc).timestamp())
 
     def _get_escrow(self, escrow_id: u256) -> Escrow:
         if escrow_id <= 0 or escrow_id > self.counters["escrow_count"]:
@@ -404,26 +411,33 @@ class DeliveryEscrow(gl.Contract):
         verdict = _parse_verdict(raw)
         return json.dumps(verdict, sort_keys=True)
 
-    def _validate_judgment(self, escrow: Escrow, leader_result) -> bool:
+    def _validate_judgment(self, escrow: Escrow, leaders_res) -> bool:
         """Custom equivalence validator for the judgment (see CONSENSUS.md).
 
-        Re-runs the leader's work and compares the STRUCTURED verdict —
-        never the raw text, which two honest validators will word
-        differently. If the leader failed, its normalized error is compared
-        against our own failure under the error taxonomy.
+        The validator receives a gl.vm.Result, not the raw verdict (docs:
+        Non-determinism / Equivalence Principle, "Error Patterns for
+        Consensus" — validator_fn(leaders_res: gl.vm.Result) -> bool):
+        - gl.vm.Return: the leader succeeded; its verdict is on .calldata.
+        - anything else (gl.vm.UserError / gl.vm.VMError): the leader
+          failed; re-run the leader's work and compare the failure
+          against the leader's message under the error taxonomy.
+        On success it re-runs the leader's work and compares the
+        STRUCTURED verdict — never the raw text, which two honest
+        validators will word differently.
         """
-        if isinstance(leader_result, str) and leader_result.startswith("["):
+        if not isinstance(leaders_res, gl.vm.Return):
+            leader_msg = leaders_res.message if hasattr(leaders_res, "message") else ""
             try:
                 self._leader_judgment(escrow)
             except Exception as e:
-                return _errors_agree(leader_result, e)
+                return _errors_agree(leader_msg, e)
             return False
         try:
             mine = self._leader_judgment(escrow)
         except Exception:
             return False
         try:
-            theirs = _parse_verdict(leader_result)
+            theirs = _parse_verdict(leaders_res.calldata)
             mine_v = _parse_verdict(mine)
         except Exception:
             return False
@@ -434,8 +448,8 @@ class DeliveryEscrow(gl.Contract):
         def leader_fn():
             return self._leader_judgment(escrow)
 
-        def validator_fn(leader_result):
-            return self._validate_judgment(escrow, leader_result)
+        def validator_fn(leaders_res):
+            return self._validate_judgment(escrow, leaders_res)
 
         return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
@@ -450,7 +464,7 @@ class DeliveryEscrow(gl.Contract):
         deadline: u256,
     ) -> dict:
         """Lock GEN in escrow for a job. The attached GEN is the escrow."""
-        client = gl.message.sender_account
+        client = gl.message.sender_address
         amount = gl.message.value
         # GenLayer public methods never take Address parameters: addresses
         # arrive as hex strings and are converted inside the method.
@@ -486,7 +500,7 @@ class DeliveryEscrow(gl.Contract):
     def submit_delivery(self, escrow_id: u256, url: str, notes: str) -> dict:
         """Freelancer submits the delivery URL. Only while funded, before deadline."""
         escrow = self._get_escrow(escrow_id)
-        if gl.message.sender_account != escrow.freelancer:
+        if gl.message.sender_address != escrow.freelancer:
             raise gl.UserError("only the named freelancer can submit a delivery")
         _require_status(escrow, "funded")
         if self._now() >= escrow.deadline:
@@ -587,7 +601,7 @@ class DeliveryEscrow(gl.Contract):
         """Client-only refund: unverifiable escrow, or funded escrow whose
         deadline passed with no delivery. Pays the full locked amount back."""
         escrow = self._get_escrow(escrow_id)
-        if gl.message.sender_account != escrow.client:
+        if gl.message.sender_address != escrow.client:
             raise gl.UserError("only the client can claim a refund")
         now = self._now()
         if escrow.status == "unverifiable":

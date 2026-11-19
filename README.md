@@ -65,7 +65,8 @@ reproducible and auditable.
 - **Status machine:** `funded → delivered → judged → settled`;
   `funded → refunded` (deadline, no delivery);
   `delivered → unverifiable → refunded` (3 failed judgments).
-- **Access control** via `gl.message.sender_account`, raising
+- **Access control** via `gl.message.sender_address` (an `Address`,
+  compared directly against the stored client/freelancer), raising
   `gl.UserError` for business errors (wrong caller, wrong status, past
   deadline, zero amount, empty brief).
 - **Payouts** are direct transfers of the GEN locked in the contract
@@ -86,7 +87,11 @@ with `gl.nondet.exec_prompt(prompt, response_format="json")`.
 The validator is **custom, not `strict_eq`** — strict equality always
 fails consensus on LLM output, because two honest validators word the
 same conclusion differently. Instead the validator re-runs the leader's
-work and compares the *structured* verdict:
+work and compares the *structured* verdict. It receives the leader's
+outcome as a `gl.vm.Result`: on `gl.vm.Return` the verdict JSON is on
+`.calldata`; on any other Result the leader failed, and the validator
+re-runs the leader's work and compares the failure under the error
+taxonomy below:
 
 - `delivered` must match exactly;
 - `quality_score` must agree within **±10**;
@@ -144,10 +149,12 @@ below), so the contract is structured with module-level pure helpers
 `_validate_create`, `_handle_leader_error`, `_errors_agree`) and
 `tests/conftest.py` stubs the `genlayer` module (a minimal fake `gl`
 with Contract, TreeMap, DynArray, public decorators, UserError, message,
-nondet, eq_principle, vm) so the contract file imports cleanly and the
-lifecycle runs end-to-end under the stub — including the consensus flow
-(leader + validator agreement/disagreement) and payout calls, which are
-recorded by patching `_PayoutTarget.emit_transfer`.
+nondet, eq_principle, vm with `gl.vm.Return` / `gl.vm.UserError` Result
+types, and the stdlib clock pinned to the transaction datetime) so the
+contract file imports cleanly and the lifecycle runs end-to-end under
+the stub — including the consensus flow (leader + validator
+agreement/disagreement) and payout calls, which are recorded by
+patching `_PayoutTarget.emit_transfer`.
 
 ```sh
 pip install -r requirements.txt
@@ -182,8 +189,9 @@ TreeMap/DynArray, no floats for money, all nondeterminism inside
 compiles cleanly with `python3 -m py_compile`. **Before submitting, run
 `genvm-lint check contracts/delivery_escrow.py`** from the official
 GenLayer tooling (GenLayer Studio runs the same checks on deploy) and
-fix anything it flags — in particular confirm `gl.block.timestamp` and
-the `_PayoutTarget.emit_transfer` payout wiring against the target network.
+fix anything it flags — in particular confirm the transaction-datetime
+deadline clock (`datetime.now(timezone.utc)`) and the
+`_PayoutTarget.emit_transfer` payout wiring against the target network.
 
 ## Deploy
 
@@ -207,7 +215,11 @@ category.
   GenLayer's consensus: validators that disagree force re-execution /
   leader rotation. Appeal of a settled verdict is GenLayer's own
   mechanism, not something this contract re-implements.
-- **Deadlines use the block timestamp** (`gl.block.timestamp`).
+- **Deadlines use the transaction datetime** —
+  `int(datetime.now(timezone.utc).timestamp())` in Unix seconds. GenLayer
+  exposes no block timestamp (no block number or hash in the transaction
+  context); the stdlib clock is wired to the transaction datetime, so
+  every validator sees the same value.
 - **`get_stats` iterates all escrows.** Fine for a primitive's expected
   scale; a deployment expecting thousands of escrows should paginate or
   maintain running counters instead.
