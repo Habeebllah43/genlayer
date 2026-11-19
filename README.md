@@ -67,7 +67,7 @@ reproducible and auditable.
   `delivered → unverifiable → refunded` (3 failed judgments).
 - **Access control** via `gl.message.sender_address` (an `Address`,
   compared directly against the stored client/freelancer), raising
-  `gl.UserError` for business errors (wrong caller, wrong status, past
+  `gl.vm.UserError` for business errors (wrong caller, wrong status, past
   deadline, zero amount, empty brief).
 - **Payouts** are direct transfers of the GEN locked in the contract
   by the payable `create_escrow` call. They go out through
@@ -148,7 +148,7 @@ below), so the contract is structured with module-level pure helpers
 (`_payout_split`, `_parse_verdict`, `_verdicts_agree`,
 `_validate_create`, `_handle_leader_error`, `_errors_agree`) and
 `tests/conftest.py` stubs the `genlayer` module (a minimal fake `gl`
-with Contract, TreeMap, DynArray, public decorators, UserError, message,
+with Contract, TreeMap, DynArray, public decorators, message,
 nondet, eq_principle, vm with `gl.vm.Return` / `gl.vm.UserError` Result
 types, and the stdlib clock pinned to the transaction datetime) so the
 contract file imports cleanly and the lifecycle runs end-to-end under

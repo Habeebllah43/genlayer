@@ -247,23 +247,23 @@ def _errors_agree(a, b):
 
 
 def _validate_create(brief, criteria, deadline, amount, now):
-    """Business-rule checks for create_escrow. Raises gl.UserError."""
+    """Business-rule checks for create_escrow. Raises gl.vm.UserError."""
     if amount <= 0:
-        raise gl.UserError("escrow amount must be greater than zero")
+        raise gl.vm.UserError("escrow amount must be greater than zero")
     if not brief or not brief.strip():
-        raise gl.UserError("brief must not be empty")
+        raise gl.vm.UserError("brief must not be empty")
     if criteria is None or len(criteria) == 0:
-        raise gl.UserError("at least one acceptance criterion is required")
+        raise gl.vm.UserError("at least one acceptance criterion is required")
     for criterion in criteria:
         if criterion is None or not str(criterion).strip():
-            raise gl.UserError("acceptance criteria must not be empty")
+            raise gl.vm.UserError("acceptance criteria must not be empty")
     if deadline <= now:
-        raise gl.UserError("deadline must be in the future")
+        raise gl.vm.UserError("deadline must be in the future")
 
 
 def _require_status(escrow, *allowed):
     if escrow.status not in allowed:
-        raise gl.UserError(
+        raise gl.vm.UserError(
             "escrow %d is '%s', expected one of %s"
             % (escrow.id, escrow.status, ", ".join(allowed))
         )
@@ -382,7 +382,7 @@ class DeliveryEscrow(gl.Contract):
 
     def _get_escrow(self, escrow_id: u256) -> Escrow:
         if escrow_id <= 0 or escrow_id > self.counters["escrow_count"]:
-            raise gl.UserError("escrow not found")
+            raise gl.vm.UserError("escrow not found")
         return self.escrows[escrow_id]
 
     def _pay(self, to: Address, amount: u256) -> None:
@@ -471,7 +471,7 @@ class DeliveryEscrow(gl.Contract):
         freelancer = Address(freelancer)
         payout_wallet = Address(payout_wallet)
         if freelancer == client:
-            raise gl.UserError("freelancer must be different from the client")
+            raise gl.vm.UserError("freelancer must be different from the client")
         _validate_create(brief, criteria, deadline, amount, self._now())
         escrow_id = self.counters["escrow_count"] + 1
         self.counters["escrow_count"] = escrow_id
@@ -501,12 +501,12 @@ class DeliveryEscrow(gl.Contract):
         """Freelancer submits the delivery URL. Only while funded, before deadline."""
         escrow = self._get_escrow(escrow_id)
         if gl.message.sender_address != escrow.freelancer:
-            raise gl.UserError("only the named freelancer can submit a delivery")
+            raise gl.vm.UserError("only the named freelancer can submit a delivery")
         _require_status(escrow, "funded")
         if self._now() >= escrow.deadline:
-            raise gl.UserError("deadline has passed; delivery is no longer accepted")
+            raise gl.vm.UserError("deadline has passed; delivery is no longer accepted")
         if not url or not (url.startswith("http://") or url.startswith("https://")):
-            raise gl.UserError("deliverable_url must be an http(s) URL")
+            raise gl.vm.UserError("deliverable_url must be an http(s) URL")
         escrow.deliverable_url = url
         escrow.deliverable_notes = notes
         escrow.status = "delivered"
@@ -527,7 +527,7 @@ class DeliveryEscrow(gl.Contract):
         escrow = self._get_escrow(escrow_id)
         _require_status(escrow, "delivered")
         if escrow.attempts >= MAX_JUDGMENT_ATTEMPTS:
-            raise gl.UserError("judgment attempts exhausted")
+            raise gl.vm.UserError("judgment attempts exhausted")
         try:
             verdict_json = self._run_judgment(escrow)
         except Exception as e:
@@ -602,14 +602,14 @@ class DeliveryEscrow(gl.Contract):
         deadline passed with no delivery. Pays the full locked amount back."""
         escrow = self._get_escrow(escrow_id)
         if gl.message.sender_address != escrow.client:
-            raise gl.UserError("only the client can claim a refund")
+            raise gl.vm.UserError("only the client can claim a refund")
         now = self._now()
         if escrow.status == "unverifiable":
             pass
         elif escrow.status == "funded" and now >= escrow.deadline:
             pass
         else:
-            raise gl.UserError("refund is not available for this escrow in its current state")
+            raise gl.vm.UserError("refund is not available for this escrow in its current state")
         self._pay(escrow.client, escrow.atto_amount)
         self.total_refunded_atto = self.total_refunded_atto + escrow.atto_amount
         self.counters["refunded_count"] = self.counters["refunded_count"] + 1

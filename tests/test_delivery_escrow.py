@@ -20,7 +20,7 @@ from conftest import (
 )
 
 m = delivery_escrow  # the contract module
-UserError = delivery_escrow.gl.UserError
+UserError = delivery_escrow.gl.vm.UserError
 ONE_GEN = 10**18
 
 

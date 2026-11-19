@@ -5,7 +5,7 @@ The stub mirrors the parts of the real API the contract uses:
 - `gl` namespace: public.write / public.write.payable / public.view,
   evm.contract_interface, nondet.web.render, nondet.exec_prompt,
   vm.run_nondet_unsafe (with gl.vm.Return / gl.vm.UserError Result
-  types), eq_principle, message, Contract, UserError.
+  types), eq_principle, message, Contract.
 - Top-level types: u256, Address, TreeMap, DynArray, allow_storage.
 
 There is deliberately NO `gl.block`: GenLayer exposes no block number,
@@ -16,7 +16,7 @@ NOW via _FixedDateTime (see set_now).
 
 `run_nondet_unsafe` here models the real flow in miniature: run the
 leader, wrap its outcome in a gl.vm.Result (Return with the value on
-.calldata, or UserError carrying the leader's message), hand that
+.calldata, or gl.vm.UserError carrying the leader's message), hand that
 Result to the validator, and raise if the validator disagrees. If the
 leader errored and the validator agrees it failed, the leader's error
 is re-raised, as errors flow from nondet to deterministic code. Tests
@@ -143,9 +143,6 @@ class _Gl:
     message = _Message()
 
     class Contract:
-        pass
-
-    class UserError(Exception):
         pass
 
 
