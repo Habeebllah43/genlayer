@@ -115,7 +115,6 @@ class _Gl:
     eq_principle = _EqPrinciple()
     message = _Message()
     block = _Block()
-    contract = _Deco()
 
     class Contract:
         pass

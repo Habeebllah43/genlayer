@@ -347,7 +347,6 @@ class _PayoutTarget:
 # ---------------------------------------------------------------------------
 # The contract
 # ---------------------------------------------------------------------------
-@gl.contract
 class DeliveryEscrow(gl.Contract):
     owner: Address
     escrows: TreeMap[u256, Escrow]
