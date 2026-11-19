@@ -1,3 +1,9 @@
+# v0.2.16
+# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+
+# Always put above lines as first in the contract file.
+# (GenLayer Studio / GenVM require this runner header; without it schema
+# loading fails with "invalid contract absent_runner_comment".)
 """
 DeliveryEscrow — an AI-judged freelance delivery escrow.
 
