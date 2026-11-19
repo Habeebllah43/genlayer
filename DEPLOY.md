@@ -41,9 +41,9 @@ python3 -m pytest tests/ -q
 2. Create a new contract and paste in `contracts/delivery_escrow.py`
    (one contract per file — this file is the whole contract).
    When Studio asks for the constructor argument, enter your own wallet
-   address as `owner_address` (the contract takes the owner as a
-   parameter because reading the sender inside `__init__` breaks
-   deployment on Studio).
+   address as `owner_address` (a hex string — the constructor takes it
+   as `str` and converts it to `Address` inside, because reading the
+   sender inside `__init__` breaks deployment on Studio).
 3. Deploy to **studionet**. Studio deploys with 5 simulated validators,
    so `request_judgment` actually runs consensus.
 4. **No payout setup needed.** Payouts are direct transfers of the
@@ -54,7 +54,8 @@ python3 -m pytest tests/ -q
 5. Walk the full flow on studionet (amounts are play money):
    - **Create:** call `create_escrow` from the client account,
      attaching GEN (the `value` field), e.g. freelancer = a second
-     wallet, payout wallet = that same wallet, brief = the bakery
+     wallet, payout wallet = that same wallet (both passed as hex
+     strings — the method converts them to `Address` inside), brief = the bakery
      example in `README.md`, criteria = the four listed criteria,
      deadline = a Unix timestamp one day ahead.
    - **Deliver:** from the freelancer account, call `submit_delivery`

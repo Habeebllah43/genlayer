@@ -356,11 +356,13 @@ class DeliveryEscrow(gl.Contract):
     total_paid_out_atto: u256
     total_refunded_atto: u256
 
-    def __init__(self, owner_address: Address):
+    def __init__(self, owner_address: str):
         # The owner is passed in as a constructor argument on purpose:
         # reading the sender inside __init__ breaks deployment on
-        # GenLayer Studio. When deploying, pass your own wallet address.
-        self.owner = owner_address
+        # GenLayer Studio. When deploying, pass your own wallet address
+        # as a hex string — GenLayer constructors never take Address
+        # parameters, so it is converted to Address here.
+        self.owner = Address(owner_address)
         self.counters["escrow_count"] = 0
         self.counters["settled_count"] = 0
         self.counters["refunded_count"] = 0
@@ -442,8 +444,8 @@ class DeliveryEscrow(gl.Contract):
     @gl.public.write.payable
     def create_escrow(
         self,
-        freelancer: Address,
-        payout_wallet: Address,
+        freelancer: str,
+        payout_wallet: str,
         brief: str,
         criteria: DynArray[str],
         deadline: u256,
@@ -451,6 +453,10 @@ class DeliveryEscrow(gl.Contract):
         """Lock GEN in escrow for a job. The attached GEN is the escrow."""
         client = gl.message.sender_account
         amount = gl.message.value
+        # GenLayer public methods never take Address parameters: addresses
+        # arrive as hex strings and are converted inside the method.
+        freelancer = Address(freelancer)
+        payout_wallet = Address(payout_wallet)
         if freelancer == client:
             raise gl.UserError("freelancer must be different from the client")
         _validate_create(brief, criteria, deadline, amount, self._now())
