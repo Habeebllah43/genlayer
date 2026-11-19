@@ -25,7 +25,7 @@ genvm-lint check contracts/delivery_escrow.py
 > an empty placeholder). Install it from GenLayer's official tooling
 > instructions and run the check before deploying. Fix anything it
 > flags — in particular confirm `gl.block.timestamp` and the
-> `IEscrowArbiter.emit_transfer` wiring (see step 2).
+> `_PayoutTarget.emit_transfer` payout wiring (see step 2).
 
 Also run the unit tests once more, so you know the logic you are
 deploying is the logic that passed:
@@ -46,12 +46,11 @@ python3 -m pytest tests/ -q
    deployment on Studio).
 3. Deploy to **studionet**. Studio deploys with 5 simulated validators,
    so `request_judgment` actually runs consensus.
-4. **Confirm the Arbiter.** In Studio, find the network's Arbiter
-   settlement interface/address and check it matches
-   `IEscrowArbiter.emit_transfer` in the contract. If Studio names the
-   interface or address differently, update the contract and redeploy.
-   Then, as the contract owner, call `set_arbiter(<arbiter address>)` —
-   until you do, `settle` and `claim_refund` refuse to pay (by design).
+4. **No payout setup needed.** Payouts are direct transfers of the
+   GEN locked by `create_escrow`, through `_PayoutTarget.emit_transfer`
+   (the faucet pattern) — there is no Arbiter address to confirm and
+   no `set_arbiter` call. `settle` and `claim_refund` pay out as soon
+   as they run.
 5. Walk the full flow on studionet (amounts are play money):
    - **Create:** call `create_escrow` from the client account,
      attaching GEN (the `value` field), e.g. freelancer = a second
@@ -78,9 +77,8 @@ python3 -m pytest tests/ -q
 1. In Studio, switch the network to **Bradbury** (GenLayer testnet).
 2. Get testnet GEN from the faucet (linked in Studio / the GenLayer
    docs). Testnet funds have no real value.
-3. Redeploy the contract, call `set_arbiter` with Bradbury's Arbiter
-   address (confirm it in the Bradbury docs — do not reuse the
-   studionet address), and repeat the full flow from step 2.5.
+3. Redeploy the contract and repeat the full flow from step 2.5 (no
+   payout setup call is needed on Bradbury either).
 4. Record: contract address, a `create_escrow` transaction, a
    `request_judgment` transaction showing a stored verdict, and a
    `settle` transaction. These are your evidence for the portal.
@@ -105,9 +103,8 @@ python3 -m pytest tests/ -q
 
 ## 5. Mainnet (only when you are ready)
 
-- Confirm the Arbiter interface name and address for mainnet in the
-  official GenLayer docs, redeploy, and call `set_arbiter` with the
-  mainnet address.
+- Confirm the payout wiring (`_PayoutTarget.emit_transfer`) against the
+  official GenLayer docs for mainnet, and redeploy.
 - Re-run `genvm-lint` against the exact file you deploy.
 - Start with small escrow amounts: the settlement tiers are
   deterministic, but the judgment quality depends on the live

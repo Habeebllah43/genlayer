@@ -53,7 +53,7 @@ reproducible and auditable.
 
 `contracts/delivery_escrow.py` — one contract class, `DeliveryEscrow`.
 
-- **Storage** (class-level annotations only): `owner`, `arbiter`,
+- **Storage** (class-level annotations only): `owner`,
   `escrows: TreeMap[u256, Escrow]`, `escrow_order: DynArray[u256]`,
   `counters: TreeMap[str, u256]`, `total_paid_out_atto`,
   `total_refunded_atto`. No Python dict/list in storage; money is `u256`
@@ -68,12 +68,13 @@ reproducible and auditable.
 - **Access control** via `gl.message.sender_account`, raising
   `gl.UserError` for business errors (wrong caller, wrong status, past
   deadline, zero amount, empty brief).
-- **Payouts** go out through `IEscrowArbiter.emit_transfer` on an
-  `@gl.evm.contract_interface` (the documented Arbiter-escrow pattern).
-  The owner sets the network's Arbiter address with `set_arbiter()` after
-  deployment — **confirm the exact interface name and Arbiter address
-  against the target network's GenLayer documentation before mainnet use.**
-  See `DEPLOY.md`.
+- **Payouts** are direct transfers of the GEN locked in the contract
+  by the payable `create_escrow` call. They go out through
+  `_PayoutTarget.emit_transfer` on an `@gl.evm.contract_interface`
+  (the faucet pattern: `emit_transfer` takes only `value=`, and the
+  destination is the address passed to the constructor). No Arbiter
+  and no setup call are needed — `settle` and `claim_refund` pay out
+  as soon as they run. See `DEPLOY.md`.
 
 ## How consensus and equivalence work here
 
@@ -146,7 +147,7 @@ with Contract, TreeMap, DynArray, public decorators, UserError, message,
 nondet, eq_principle, vm) so the contract file imports cleanly and the
 lifecycle runs end-to-end under the stub — including the consensus flow
 (leader + validator agreement/disagreement) and payout calls, which are
-recorded by patching `IEscrowArbiter.emit_transfer`.
+recorded by patching `_PayoutTarget.emit_transfer`.
 
 ```sh
 pip install -r requirements.txt
@@ -182,7 +183,7 @@ compiles cleanly with `python3 -m py_compile`. **Before submitting, run
 `genvm-lint check contracts/delivery_escrow.py`** from the official
 GenLayer tooling (GenLayer Studio runs the same checks on deploy) and
 fix anything it flags — in particular confirm `gl.block.timestamp` and
-the `IEscrowArbiter.emit_transfer` wiring against the target network.
+the `_PayoutTarget.emit_transfer` payout wiring against the target network.
 
 ## Deploy
 
@@ -193,10 +194,11 @@ category.
 
 ## Honest limits
 
-- **Settlement interface:** payouts use `IEscrowArbiter.emit_transfer`;
-  the exact interface name and Arbiter address must be confirmed per
-  network before mainnet use (see above). Until `set_arbiter` is called,
-  `settle`/`claim_refund` refuse to pay.
+- **Settlement interface:** payouts use `_PayoutTarget.emit_transfer`
+  (the faucet pattern, copied from GenLayer Studio's bundled
+  `faucet.py`). `settle` and `claim_refund` pay out directly with no
+  setup call — confirm the payout wiring in Studio testing before
+  mainnet use.
 - **Delivery verification is only as good as what validators can fetch.**
   The contract judges the content at the submitted URL; it cannot prove
   the freelancer authored it, and it cannot check a delivery that needs a

@@ -7,7 +7,6 @@ import json
 import pytest
 
 from conftest import (
-    ARBITER,
     CLIENT,
     FREELANCER,
     NOW,
@@ -262,8 +261,6 @@ class TestLifecycle:
             contract.request_judgment(funded)
 
     def test_full_flow_full_payout(self, contract, gl, delivered, monkeypatch):
-        set_sender(gl, OWNER)
-        contract.set_arbiter(ARBITER)
         stub_judge(gl, json.dumps({"delivered": True, "quality_score": 85, "reasoning": "all criteria met"}))
         calls = record_transfers(monkeypatch)
         res = contract.request_judgment(delivered)
@@ -278,8 +275,6 @@ class TestLifecycle:
         assert contract.get_stats()["total_paid_out_atto"] == 5 * ONE_GEN
 
     def test_full_flow_partial_payout(self, contract, gl, delivered, monkeypatch):
-        set_sender(gl, OWNER)
-        contract.set_arbiter(ARBITER)
         stub_judge(gl, json.dumps({"delivered": True, "quality_score": 65, "reasoning": "mostly done"}))
         calls = record_transfers(monkeypatch)
         contract.request_judgment(delivered)
@@ -292,8 +287,6 @@ class TestLifecycle:
         ]
 
     def test_full_flow_full_refund_low_score(self, contract, gl, delivered, monkeypatch):
-        set_sender(gl, OWNER)
-        contract.set_arbiter(ARBITER)
         stub_judge(gl, json.dumps({"delivered": True, "quality_score": 30, "reasoning": "poor"}))
         calls = record_transfers(monkeypatch)
         contract.request_judgment(delivered)
@@ -307,8 +300,6 @@ class TestLifecycle:
         assert calls == [(CLIENT, 5 * ONE_GEN)]
 
     def test_settle_twice_rejected(self, contract, gl, delivered, monkeypatch):
-        set_sender(gl, OWNER)
-        contract.set_arbiter(ARBITER)
         stub_judge(gl, json.dumps({"delivered": True, "quality_score": 90, "reasoning": "great"}))
         record_transfers(monkeypatch)
         contract.request_judgment(delivered)
@@ -316,17 +307,18 @@ class TestLifecycle:
         with pytest.raises(UserError):
             contract.settle(delivered)
 
-    def test_settle_requires_arbiter(self, contract, gl, delivered):
+    def test_settle_pays_directly_without_setup(self, contract, gl, delivered, monkeypatch):
         stub_judge(gl, json.dumps({"delivered": True, "quality_score": 90, "reasoning": "great"}))
+        calls = record_transfers(monkeypatch)
         contract.request_judgment(delivered)
-        with pytest.raises(UserError, match="arbiter"):
-            contract.settle(delivered)
+        res = contract.settle(delivered)
+        assert res["status"] == "settled"
+        assert res["freelancer_atto"] == 5 * ONE_GEN
+        assert calls == [(PAYOUT, 5 * ONE_GEN)]
 
     def test_cannot_verify_three_times_then_refund(
         self, contract, gl, delivered, monkeypatch
     ):
-        set_sender(gl, OWNER)
-        contract.set_arbiter(ARBITER)
         stub_judge(
             gl,
             json.dumps(
@@ -354,8 +346,6 @@ class TestLifecycle:
         assert calls == [(CLIENT, 5 * ONE_GEN)]
 
     def test_refund_after_deadline_no_delivery(self, contract, gl, funded, monkeypatch):
-        set_sender(gl, OWNER)
-        contract.set_arbiter(ARBITER)
         calls = record_transfers(monkeypatch)
         gl.block.timestamp = NOW + 86_400 + 1
         set_sender(gl, CLIENT)
@@ -413,7 +403,9 @@ class TestLifecycle:
         assert stats["by_status"]["funded"] == 2
         assert stats["total_locked_atto"] == 7 * ONE_GEN
 
-    def test_set_arbiter_owner_only(self, contract, gl):
-        set_sender(gl, CLIENT)
-        with pytest.raises(UserError):
-            contract.set_arbiter(ARBITER)
+    def test_no_arbiter_setup_needed(self, contract):
+        # The old Arbiter machinery is gone: no set_arbiter method and no
+        # arbiter storage. Payouts go out directly on settle / claim_refund.
+        assert not hasattr(contract, "set_arbiter")
+        assert not hasattr(contract, "arbiter")
+        assert not hasattr(contract, "arbiter_set")

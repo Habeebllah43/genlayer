@@ -10,7 +10,7 @@ The stub mirrors the parts of the real API the contract uses:
 `run_nondet_unsafe` here models the real flow in miniature: run the
 leader, hand its result to the validator, and raise if the validator
 disagrees. Tests override `gl.nondet.web.render` / `exec_prompt` with
-canned responses, and patch `IEscrowArbiter.emit_transfer` to record
+canned responses, and patch `_PayoutTarget.emit_transfer` to record
 payouts.
 """
 import sys
@@ -41,8 +41,8 @@ class _Deco:
 class _InterfaceDeco:
     """Decorator for @gl.evm.contract_interface classes.
 
-    In real GenVM, an interface class is instantiated with the target
-    contract's address: ``IEscrowArbiter(arbiter_address).emit_transfer(...)``.
+    In real GenVM, an interface class is instantiated with the payout
+    destination's address: ``_PayoutTarget(recipient).emit_transfer(value=v)``.
     The stub emulates that by giving the class an address-taking constructor.
     """
 
@@ -163,7 +163,6 @@ OWNER = "0x1111111111111111111111111111111111111111"
 CLIENT = "0x2222222222222222222222222222222222222222"
 FREELANCER = "0x3333333333333333333333333333333333333333"
 PAYOUT = "0x4444444444444444444444444444444444444444"
-ARBITER = "0x5555555555555555555555555555555555555555"
 NOW = 1_800_000_000  # fixed "now" for deterministic deadline tests
 
 
@@ -236,11 +235,16 @@ def stub_judge(gl, verdict_json):
 
 
 def record_transfers(monkeypatch):
-    """Patch IEscrowArbiter.emit_transfer to record (to, amount) calls."""
+    """Patch _PayoutTarget.emit_transfer to record (destination, value) calls.
+
+    emit_transfer takes only value=; the destination is the address the
+    interface was constructed with, stored on the instance as _address.
+    """
     calls = []
     monkeypatch.setattr(
-        delivery_escrow.IEscrowArbiter,
+        delivery_escrow._PayoutTarget,
         "emit_transfer",
-        lambda self, to, amount: calls.append((to, amount)),
+        lambda self, value: calls.append((self._address, value)),
+        raising=False,
     )
     return calls

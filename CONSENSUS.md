@@ -146,7 +146,8 @@ there is no path from a failed or unverifiable judgment to a payout.
 2. **Validator argument.** The design assumes `validator_fn` receives
    the leader's return value as its single argument. Confirm against
    the `run_nondet_unsafe` signature in the deployed GenVM version.
-3. **Arbiter interface.** `IEscrowArbiter.emit_transfer` and the
-   Arbiter address must be confirmed per network (see README).
+3. **Payout interface.** Payouts use `_PayoutTarget.emit_transfer`
+   (the faucet pattern from Studio's bundled `faucet.py`); confirm
+   the payout wiring in Studio testing (see README).
 4. **Block timestamp.** Deadline checks use `gl.block.timestamp`;
    confirm it is available in the deployed GenVM version.

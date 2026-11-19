@@ -38,10 +38,11 @@ Fail closed: if the delivery cannot be fetched, or the validators cannot
 verify it, nobody is paid. The escrow stays open for re-judgment (max 3
 attempts) and then refunds the client.
 
-Payouts go out through the EVM settlement interface below (the documented
-Arbiter-escrow pattern). See README.md / DEPLOY.md: confirm the exact
-interface name and Arbiter address for your target network before mainnet
-use, and set it with set_arbiter().
+Payouts are direct transfers of the GEN locked in the contract by the
+payable create_escrow call. They go out through the faucet-pattern EVM
+interface below (_PayoutTarget): the @gl.evm.contract_interface decorator
+provides emit_transfer, which takes only value=, and the destination is
+the address passed to the constructor. No Arbiter or setup call is needed.
 """
 import json
 from dataclasses import dataclass
@@ -322,19 +323,25 @@ class Escrow:
 
 
 # ---------------------------------------------------------------------------
-# EVM settlement interface (Arbiter-escrow pattern)
+# Payout interface (faucet pattern)
 #
-# Payouts leave the contract through the network's Arbiter settlement
-# interface. The interface name and the Arbiter address MUST be confirmed
-# against the target network's GenLayer documentation before mainnet use
-# (GenLayer Studio shows the Arbiter for its networks); the owner sets the
-# address with set_arbiter() after deployment. This contract never holds
-# private keys and never pays out without a stored, consensus-reached
-# verdict (or an explicit refund state).
+# Payouts are direct transfers of the GEN locked in the contract by the
+# payable create_escrow call. The @gl.evm.contract_interface decorator
+# provides emit_transfer: it takes only value=, and the destination is the
+# address passed to the constructor. No methods are declared here — the
+# nested View and Write classes are required by the decorator, and
+# declaring emit_transfer (or any method) breaks schema generation in
+# GenLayer Studio ("'IEscrowArbiter' has no attribute 'View'"). This
+# contract never holds private keys and never pays out without a stored,
+# consensus-reached verdict (or an explicit refund state).
 # ---------------------------------------------------------------------------
 @gl.evm.contract_interface
-class IEscrowArbiter:
-    def emit_transfer(self, to: Address, amount: u256) -> None: ...
+class _PayoutTarget:
+    class View:
+        pass
+
+    class Write:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -343,8 +350,6 @@ class IEscrowArbiter:
 @gl.contract
 class DeliveryEscrow(gl.Contract):
     owner: Address
-    arbiter: Address
-    arbiter_set: bool
     escrows: TreeMap[u256, Escrow]
     escrow_order: DynArray[u256]
     counters: TreeMap[str, u256]
@@ -356,7 +361,6 @@ class DeliveryEscrow(gl.Contract):
         # reading the sender inside __init__ breaks deployment on
         # GenLayer Studio. When deploying, pass your own wallet address.
         self.owner = owner_address
-        self.arbiter_set = False
         self.counters["escrow_count"] = 0
         self.counters["settled_count"] = 0
         self.counters["refunded_count"] = 0
@@ -376,12 +380,7 @@ class DeliveryEscrow(gl.Contract):
     def _pay(self, to: Address, amount: u256) -> None:
         if amount <= 0:
             return
-        if not self.arbiter_set:
-            raise gl.UserError(
-                "settlement arbiter not configured: owner must call "
-                "set_arbiter with the network's Arbiter address first"
-            )
-        IEscrowArbiter(self.arbiter).emit_transfer(to, amount)
+        _PayoutTarget(to).emit_transfer(value=amount)
 
     def _leader_judgment(self, escrow: Escrow) -> str:
         """Fetch the delivery and judge it. Runs on leader AND validators.
@@ -438,16 +437,6 @@ class DeliveryEscrow(gl.Contract):
             return self._validate_judgment(escrow, leader_result)
 
         return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-
-    # -- owner --------------------------------------------------------------
-    @gl.public.write
-    def set_arbiter(self, arbiter: Address) -> dict:
-        """Set the network's Arbiter settlement address. Owner only."""
-        if gl.message.sender_account != self.owner:
-            raise gl.UserError("only the owner can set the arbiter")
-        self.arbiter = arbiter
-        self.arbiter_set = True
-        return {"arbiter": arbiter}
 
     # -- escrow lifecycle ---------------------------------------------------
     @gl.public.write.payable
